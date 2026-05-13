@@ -16,6 +16,58 @@ namespace calendar {
 namespace {
 
 const char *kDefaultSourceId = "default";
+const char *kChinaHolidaySourceId = "china-holidays";
+const char *kAlmanacSourceId = "almanac";
+const char *kWeatherSourceId = "weather";
+const char *kChinaHolidayUrl =
+    "https://rilipro.com/HoliBack/HoliBack.php";
+const char *kAlmanacUrl = "https://rilipro.com/huangli/yi.ics";
+const char *kWeatherUrl =
+    "https://rilipro.com/weather/calendar.php?location=Guangdong_Shenzhen_Shenzhen&days=15&title=both";
+
+CalendarSource default_source()
+{
+    CalendarSource source;
+    source.id = kDefaultSourceId;
+    source.name = "Default";
+    source.url.clear();
+    source.kind = "default";
+    source.enabled = true;
+    return source;
+}
+
+CalendarSource china_holiday_source()
+{
+    CalendarSource source;
+    source.id = kChinaHolidaySourceId;
+    source.name = "China Holidays";
+    source.url = kChinaHolidayUrl;
+    source.kind = "ics";
+    source.enabled = false;
+    return source;
+}
+
+CalendarSource almanac_source()
+{
+    CalendarSource source;
+    source.id = kAlmanacSourceId;
+    source.name = "Almanac";
+    source.url = kAlmanacUrl;
+    source.kind = "ics";
+    source.enabled = false;
+    return source;
+}
+
+CalendarSource weather_source()
+{
+    CalendarSource source;
+    source.id = kWeatherSourceId;
+    source.name = "Weather";
+    source.url = kWeatherUrl;
+    source.kind = "ics";
+    source.enabled = false;
+    return source;
+}
 
 bool starts_with(const std::string &text, const std::string &prefix)
 {
@@ -39,6 +91,23 @@ std::vector<std::string> split(const std::string &text, char delim)
         parts.push_back(item);
     }
     return parts;
+}
+
+std::string query_param_raw(const std::string &url, const std::string &name)
+{
+    size_t question = url.find('?');
+    if (question == std::string::npos) return std::string();
+    size_t pos = question + 1;
+    while (pos <= url.size()) {
+        size_t amp = url.find('&', pos);
+        std::string part = url.substr(pos, amp == std::string::npos ? std::string::npos : amp - pos);
+        size_t eq = part.find('=');
+        std::string key = eq == std::string::npos ? part : part.substr(0, eq);
+        if (key == name) return eq == std::string::npos ? std::string() : part.substr(eq + 1);
+        if (amp == std::string::npos) break;
+        pos = amp + 1;
+    }
+    return std::string();
 }
 
 std::string replace_all(std::string value, const std::string &from, const std::string &to)
@@ -81,7 +150,7 @@ std::string ics_unescape(std::string value)
     for (size_t i = 0; i < value.size(); ++i) {
         if (value[i] == '\\' && i + 1 < value.size()) {
             char next = value[++i];
-            if (next == 'n' || next == 'N') out.push_back(' ');
+            if (next == 'n' || next == 'N') out.push_back('\n');
             else out.push_back(next);
         } else {
             out.push_back(value[i]);
@@ -364,10 +433,39 @@ std::string cache_path_for_url(const std::string &url)
 std::string normalize_url(std::string url)
 {
     url = trim_copy(url);
+    url = replace_all(url, "&amp;", "&");
     if (starts_with(url, "webcal://")) {
         url = "https://" + url.substr(9);
     }
+    if (url.find("calendar.google.com/calendar/") != std::string::npos &&
+        url.find("/embed") != std::string::npos) {
+        std::string src = query_param_raw(url, "src");
+        if (!src.empty()) {
+            return "https://calendar.google.com/calendar/ical/" + src + "/public/basic.ics";
+        }
+    }
     return url;
+}
+
+void ensure_builtin_source(Settings *settings, const CalendarSource &source, size_t preferred_index)
+{
+    for (size_t i = 0; i < settings->sources.size(); ++i) {
+        if (settings->sources[i].id != source.id) continue;
+        bool enabled = settings->sources[i].enabled;
+        settings->sources[i] = source;
+        settings->sources[i].enabled = enabled;
+        return;
+    }
+    size_t insert_at = std::min(preferred_index, settings->sources.size());
+    settings->sources.insert(settings->sources.begin() + insert_at, source);
+}
+
+void ensure_builtin_sources(Settings *settings)
+{
+    ensure_builtin_source(settings, default_source(), 0);
+    ensure_builtin_source(settings, china_holiday_source(), 1);
+    ensure_builtin_source(settings, almanac_source(), 2);
+    ensure_builtin_source(settings, weather_source(), 3);
 }
 
 }  // namespace
@@ -516,6 +614,9 @@ const char *tr(Language language, TextKey key)
             case TextKey::English: return "英语";
             case TextKey::Chinese: return "中文";
             case TextKey::Japanese: return "日语";
+            case TextKey::ChinaHolidays: return "节假日";
+            case TextKey::Almanac: return "老黄历";
+            case TextKey::Weather: return "天气";
         }
     }
     if (effective == Language::Japanese) {
@@ -534,13 +635,16 @@ const char *tr(Language language, TextKey key)
             case TextKey::Today: return "今日";
             case TextKey::NoEvents: return "予定なし";
             case TextKey::Saved: return "保存済み";
-            case TextKey::Cached: return "キャッシュ";
-            case TextKey::Online: return "オンライン";
-            case TextKey::Error: return "エラー";
+            case TextKey::Cached: return "C";
+            case TextKey::Online: return "ON";
+            case TextKey::Error: return "E";
             case TextKey::Auto: return "自動";
             case TextKey::English: return "英語";
             case TextKey::Chinese: return "中国語";
             case TextKey::Japanese: return "日本語";
+            case TextKey::ChinaHolidays: return "中国祝日";
+            case TextKey::Almanac: return "黄暦";
+            case TextKey::Weather: return "天気";
         }
     }
     switch (key) {
@@ -558,13 +662,16 @@ const char *tr(Language language, TextKey key)
         case TextKey::Today: return "Today";
         case TextKey::NoEvents: return "No events";
         case TextKey::Saved: return "Saved";
-        case TextKey::Cached: return "Cached";
-        case TextKey::Online: return "Online";
-        case TextKey::Error: return "Error";
+        case TextKey::Cached: return "Cache";
+        case TextKey::Online: return "On";
+        case TextKey::Error: return "Err";
         case TextKey::Auto: return "Auto";
         case TextKey::English: return "English";
         case TextKey::Chinese: return "Chinese";
         case TextKey::Japanese: return "Japanese";
+        case TextKey::ChinaHolidays: return "Holidays";
+        case TextKey::Almanac: return "Almanac";
+        case TextKey::Weather: return "Weather";
     }
     return "";
 }
@@ -574,13 +681,10 @@ Settings default_settings()
     Settings settings;
     settings.language = Language::Auto;
     settings.lunar_enabled = true;
-    CalendarSource source;
-    source.id = kDefaultSourceId;
-    source.name = "Default";
-    source.url.clear();
-    source.kind = "default";
-    source.enabled = true;
-    settings.sources.push_back(source);
+    settings.sources.push_back(default_source());
+    settings.sources.push_back(china_holiday_source());
+    settings.sources.push_back(almanac_source());
+    settings.sources.push_back(weather_source());
     return settings;
 }
 
@@ -632,18 +736,7 @@ Settings parse_settings(const std::string &text)
             settings.sources.push_back(source);
         }
     }
-    bool has_default = false;
-    for (size_t i = 0; i < settings.sources.size(); ++i) {
-        if (settings.sources[i].id == kDefaultSourceId) has_default = true;
-    }
-    if (!has_default) {
-        CalendarSource source;
-        source.id = kDefaultSourceId;
-        source.name = "Default";
-        source.kind = "default";
-        source.enabled = true;
-        settings.sources.insert(settings.sources.begin(), source);
-    }
+    ensure_builtin_sources(&settings);
     return settings;
 }
 
@@ -681,7 +774,9 @@ std::vector<Event> default_events(const Settings &settings, Date window_start, D
     for (size_t i = 0; i < settings.sources.size(); ++i) {
         if (settings.sources[i].id == kDefaultSourceId) {
             enabled = settings.sources[i].enabled;
-            source_name = settings.sources[i].name.empty() ? source_name : settings.sources[i].name;
+            if (!settings.sources[i].name.empty() && settings.sources[i].name != "Default") {
+                source_name = settings.sources[i].name;
+            }
         }
     }
     if (!enabled) return events;
@@ -821,7 +916,17 @@ std::vector<Event> load_events(const Settings &settings, Date focus_month, Langu
             else ++error_count;
         }
         if (ics.empty()) continue;
-        std::vector<Event> parsed = parse_ics_events(ics, source, window_start, window_end);
+        CalendarSource localized_source = source;
+        if (localized_source.id == kChinaHolidaySourceId) {
+            localized_source.name = tr(language, TextKey::ChinaHolidays);
+        } else if (localized_source.id == kAlmanacSourceId) {
+            localized_source.name = tr(language, TextKey::Almanac);
+        } else if (localized_source.id == kWeatherSourceId) {
+            localized_source.name = tr(language, TextKey::Weather);
+        } else if (localized_source.id == kDefaultSourceId) {
+            localized_source.name = tr(language, TextKey::Default);
+        }
+        std::vector<Event> parsed = parse_ics_events(ics, localized_source, window_start, window_end);
         events.insert(events.end(), parsed.begin(), parsed.end());
     }
 

@@ -2,17 +2,24 @@
 #include "compat/input_keys.h"
 #include "keyboard_input.h"
 #include "lvgl/lvgl.h"
+#include "lvgl/src/libs/tiny_ttf/lv_tiny_ttf.h"
 
 #include <algorithm>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits.h>
 #include <string>
 #include <unistd.h>
 #include <vector>
 
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
 #if LV_USE_SDL
+#include <SDL.h>
 #include "lvgl/src/drivers/sdl/lv_sdl_keyboard.h"
 #include "lvgl/src/drivers/sdl/lv_sdl_mouse.h"
 #include "lvgl/src/drivers/sdl/lv_sdl_window.h"
@@ -28,13 +35,13 @@ constexpr int kScreenWidth = 320;
 constexpr int kScreenHeight = 170;
 constexpr int kLeftX = 5;
 constexpr int kLeftY = 23;
-constexpr int kLeftW = 190;
+constexpr int kLeftW = 180;
 constexpr int kLeftH = 142;
-constexpr int kRightX = 202;
+constexpr int kRightX = 191;
 constexpr int kRightY = 23;
-constexpr int kRightW = 113;
+constexpr int kRightW = 124;
 constexpr int kRightH = 142;
-constexpr int kCellW = 26;
+constexpr int kCellW = 24;
 constexpr int kCellH = 19;
 
 enum class ScreenMode {
@@ -59,6 +66,17 @@ int g_filter_index = 0;
 int g_manager_row = 0;
 std::string g_input_url;
 uint32_t g_esc_down_tick = 0;
+lv_font_t *g_runtime_font_12 = nullptr;
+lv_font_t *g_runtime_font_14 = nullptr;
+bool g_runtime_fonts_initialized = false;
+std::vector<unsigned char> g_runtime_font_data;
+lv_obj_t *g_detail_scroll_panel = nullptr;
+lv_obj_t *g_detail_scroll_content = nullptr;
+lv_timer_t *g_detail_scroll_timer = nullptr;
+int g_detail_scroll_direction = 1;
+int g_detail_scroll_offset = 0;
+int g_detail_scroll_max = 0;
+int g_detail_scroll_hold = 0;
 
 const char *getenv_default(const char *name, const char *fallback)
 {
@@ -89,6 +107,8 @@ void handle_signal(int)
 
 const lv_font_t *font_text()
 {
+    if (g_ui_language == calendar::Language::English) return &lv_font_montserrat_10;
+    if (g_runtime_font_12) return g_runtime_font_12;
 #if LV_FONT_SOURCE_HAN_SANS_SC_14_CJK
     return &lv_font_source_han_sans_sc_14_cjk;
 #else
@@ -98,11 +118,104 @@ const lv_font_t *font_text()
 
 const lv_font_t *font_text_large()
 {
-#if LV_FONT_SOURCE_HAN_SANS_SC_16_CJK
-    return &lv_font_source_han_sans_sc_16_cjk;
+    if (g_ui_language == calendar::Language::English) return &lv_font_montserrat_14;
+    if (g_runtime_font_14) return g_runtime_font_14;
+#if LV_FONT_SOURCE_HAN_SANS_SC_14_CJK
+    return &lv_font_source_han_sans_sc_14_cjk;
 #else
     return &lv_font_montserrat_14;
 #endif
+}
+
+std::string dirname_of(std::string path)
+{
+    size_t slash = path.find_last_of('/');
+    if (slash == std::string::npos) return ".";
+    if (slash == 0) return "/";
+    return path.substr(0, slash);
+}
+
+std::string executable_dir()
+{
+    char path[PATH_MAX] = {};
+#if defined(__APPLE__)
+    uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) == 0) return dirname_of(path);
+#else
+    ssize_t got = readlink("/proc/self/exe", path, sizeof(path) - 1);
+    if (got > 0) {
+        path[got] = '\0';
+        return dirname_of(path);
+    }
+#endif
+    return ".";
+}
+
+std::vector<std::string> candidate_font_paths()
+{
+    std::vector<std::string> paths;
+    const char *override_path = std::getenv("M5_CALENDAR_FONT");
+    if (override_path && *override_path) paths.push_back(override_path);
+
+    std::string exe_dir = executable_dir();
+    paths.push_back("fonts/NotoSansSC-Regular.ttf");
+    paths.push_back("NotoSansSC-Regular.ttf");
+    paths.push_back(exe_dir + "/fonts/NotoSansSC-Regular.ttf");
+    paths.push_back(exe_dir + "/../fonts/NotoSansSC-Regular.ttf");
+    paths.push_back(exe_dir + "/../share/font/NotoSansSC-Regular.ttf");
+    paths.push_back(exe_dir + "/../Resources/fonts/NotoSansSC-Regular.ttf");
+    paths.push_back("/usr/share/APPLaunch/fonts/NotoSansSC-Regular.ttf");
+    paths.push_back("/usr/share/APPLaunch/share/font/NotoSansSC-Regular.ttf");
+    paths.push_back("/usr/share/fonts/truetype/noto/NotoSansSC-Regular.ttf");
+    paths.push_back("/System/Library/Fonts/Hiragino Sans GB.ttc");
+    return paths;
+}
+
+bool read_binary_file(const std::string &path, std::vector<unsigned char> *out)
+{
+    FILE *fp = std::fopen(path.c_str(), "rb");
+    if (!fp) return false;
+    if (std::fseek(fp, 0, SEEK_END) != 0) {
+        std::fclose(fp);
+        return false;
+    }
+    long size = std::ftell(fp);
+    if (size <= 0) {
+        std::fclose(fp);
+        return false;
+    }
+    std::rewind(fp);
+    out->assign(static_cast<size_t>(size), 0);
+    bool ok = std::fread(out->data(), 1, out->size(), fp) == out->size();
+    std::fclose(fp);
+    if (!ok) out->clear();
+    return ok;
+}
+
+void init_runtime_fonts()
+{
+    if (g_runtime_fonts_initialized) return;
+    g_runtime_fonts_initialized = true;
+#if LV_USE_TINY_TTF
+    std::vector<std::string> paths = candidate_font_paths();
+    for (size_t i = 0; i < paths.size(); ++i) {
+        std::vector<unsigned char> data;
+        if (!read_binary_file(paths[i], &data)) continue;
+        lv_font_t *font_12 = lv_tiny_ttf_create_data(data.data(), data.size(), 12);
+        if (!font_12) continue;
+        lv_font_t *font_14 = lv_tiny_ttf_create_data(data.data(), data.size(), 14);
+        if (!font_14) {
+            lv_tiny_ttf_destroy(font_12);
+            continue;
+        }
+        g_runtime_font_data.swap(data);
+        g_runtime_font_12 = font_12;
+        g_runtime_font_14 = font_14;
+        std::fprintf(stderr, "Calendar font loaded: %s\n", paths[i].c_str());
+        return;
+    }
+#endif
+    std::fprintf(stderr, "Calendar font fallback: built-in CJK\n");
 }
 
 std::string clipped(std::string text, size_t max_chars)
@@ -112,22 +225,225 @@ std::string clipped(std::string text, size_t max_chars)
     return text.substr(0, max_chars - 3) + "...";
 }
 
+int utf8_char_units(const std::string &text, size_t *index)
+{
+    unsigned char ch = static_cast<unsigned char>(text[*index]);
+    if (ch < 0x80) {
+        ++(*index);
+        return 1;
+    }
+    int bytes = 1;
+    if ((ch & 0xE0) == 0xC0) bytes = 2;
+    else if ((ch & 0xF0) == 0xE0) bytes = 3;
+    else if ((ch & 0xF8) == 0xF0) bytes = 4;
+    *index = std::min(text.size(), *index + static_cast<size_t>(bytes));
+    return 2;
+}
+
+bool read_utf8_codepoint(const std::string &text, size_t *index, uint32_t *codepoint,
+                         std::string *bytes)
+{
+    if (*index >= text.size()) return false;
+    size_t start = *index;
+    unsigned char ch = static_cast<unsigned char>(text[start]);
+    int len = 1;
+    uint32_t cp = ch;
+    if ((ch & 0xE0) == 0xC0) {
+        len = 2;
+        cp = ch & 0x1F;
+    } else if ((ch & 0xF0) == 0xE0) {
+        len = 3;
+        cp = ch & 0x0F;
+    } else if ((ch & 0xF8) == 0xF0) {
+        len = 4;
+        cp = ch & 0x07;
+    }
+    if (start + static_cast<size_t>(len) > text.size()) {
+        *index = text.size();
+        if (codepoint) *codepoint = ch;
+        if (bytes) *bytes = text.substr(start, 1);
+        return true;
+    }
+    for (int i = 1; i < len; ++i) {
+        unsigned char cont = static_cast<unsigned char>(text[start + static_cast<size_t>(i)]);
+        if ((cont & 0xC0) != 0x80) {
+            len = 1;
+            cp = ch;
+            break;
+        }
+        cp = (cp << 6) | (cont & 0x3F);
+    }
+    *index = start + static_cast<size_t>(len);
+    if (codepoint) *codepoint = cp;
+    if (bytes) *bytes = text.substr(start, static_cast<size_t>(len));
+    return true;
+}
+
+bool unsupported_display_symbol(uint32_t cp)
+{
+    if (cp == 0x200D || cp == 0xFE0F) return true;
+    if (cp >= 0x1F000) return true;
+    if (cp >= 0x2190 && cp <= 0x21FF) return true;
+    if (cp >= 0x2600 && cp <= 0x27BF) return true;
+    return false;
+}
+
+std::string trim_display_lines(const std::string &text)
+{
+    std::string out;
+    size_t pos = 0;
+    while (pos <= text.size()) {
+        size_t next = text.find('\n', pos);
+        std::string line = next == std::string::npos
+                               ? text.substr(pos)
+                               : text.substr(pos, next - pos);
+        line = calendar::trim_copy(line);
+        if (!out.empty()) out.push_back('\n');
+        out += line;
+        if (next == std::string::npos) break;
+        pos = next + 1;
+    }
+    return out;
+}
+
+std::string display_text(const std::string &text)
+{
+    std::string out;
+    for (size_t i = 0; i < text.size();) {
+        uint32_t cp = 0;
+        std::string bytes;
+        if (!read_utf8_codepoint(text, &i, &cp, &bytes)) break;
+        if (unsupported_display_symbol(cp)) continue;
+        out += bytes;
+    }
+    return trim_display_lines(out);
+}
+
+int wrapped_text_height(const std::string &text, int width, int min_height)
+{
+    int max_units = std::max(6, width / 7);
+    int lines = 1;
+    int units = 0;
+    for (size_t i = 0; i < text.size();) {
+        if (text[i] == '\r') {
+            ++i;
+            continue;
+        }
+        if (text[i] == '\n') {
+            ++lines;
+            units = 0;
+            ++i;
+            continue;
+        }
+        int char_units = utf8_char_units(text, &i);
+        if (units > 0 && units + char_units > max_units) {
+            ++lines;
+            units = 0;
+        }
+        units += char_units;
+    }
+    return std::max(min_height, lines * 16 + 2);
+}
+
+bool is_china_holidays_source(const calendar::CalendarSource &source)
+{
+    return source.id == "china-holidays";
+}
+
+bool is_almanac_source(const calendar::CalendarSource &source)
+{
+    return source.id == "almanac";
+}
+
+bool is_weather_source(const calendar::CalendarSource &source)
+{
+    return source.id == "weather";
+}
+
+bool is_builtin_source(const calendar::CalendarSource &source)
+{
+    return source.id == "default" || is_china_holidays_source(source) ||
+           is_almanac_source(source) || is_weather_source(source);
+}
+
+std::string source_display_name(const calendar::CalendarSource &source)
+{
+    if (source.id == "default") return calendar::tr(g_ui_language, calendar::TextKey::Default);
+    if (is_china_holidays_source(source)) {
+        return calendar::tr(g_ui_language, calendar::TextKey::ChinaHolidays);
+    }
+    if (is_almanac_source(source)) return calendar::tr(g_ui_language, calendar::TextKey::Almanac);
+    if (is_weather_source(source)) return calendar::tr(g_ui_language, calendar::TextKey::Weather);
+    return source.name;
+}
+
+calendar::CalendarSource *source_by_id(const std::string &id)
+{
+    for (size_t i = 0; i < g_settings.sources.size(); ++i) {
+        if (g_settings.sources[i].id == id) return &g_settings.sources[i];
+    }
+    return nullptr;
+}
+
+bool source_enabled(const std::string &id)
+{
+    calendar::CalendarSource *source = source_by_id(id);
+    return source && source->enabled;
+}
+
+std::vector<size_t> custom_source_indexes()
+{
+    std::vector<size_t> indexes;
+    for (size_t i = 0; i < g_settings.sources.size(); ++i) {
+        if (!is_builtin_source(g_settings.sources[i])) indexes.push_back(i);
+    }
+    return indexes;
+}
+
+std::vector<size_t> enabled_source_indexes()
+{
+    std::vector<size_t> indexes;
+    for (size_t i = 0; i < g_settings.sources.size(); ++i) {
+        if (g_settings.sources[i].enabled) indexes.push_back(i);
+    }
+    return indexes;
+}
+
+int filter_index_for_source_id(const std::string &id)
+{
+    int filter_index = 1;
+    for (size_t i = 0; i < g_settings.sources.size(); ++i) {
+        if (!g_settings.sources[i].enabled) continue;
+        if (g_settings.sources[i].id == id) return filter_index;
+        ++filter_index;
+    }
+    return 0;
+}
+
+void normalize_filter_index()
+{
+    int count = static_cast<int>(enabled_source_indexes().size()) + 1;
+    if (g_filter_index < 0 || g_filter_index >= count) g_filter_index = 0;
+}
+
 std::string filter_id()
 {
     if (g_filter_index <= 0) return "";
+    std::vector<size_t> indexes = enabled_source_indexes();
     int source_index = g_filter_index - 1;
-    if (source_index < 0 || source_index >= static_cast<int>(g_settings.sources.size())) return "";
-    return g_settings.sources[static_cast<size_t>(source_index)].id;
+    if (source_index < 0 || source_index >= static_cast<int>(indexes.size())) return "";
+    return g_settings.sources[indexes[static_cast<size_t>(source_index)]].id;
 }
 
 std::string filter_label()
 {
     if (g_filter_index <= 0) return calendar::tr(g_ui_language, calendar::TextKey::All);
+    std::vector<size_t> indexes = enabled_source_indexes();
     int source_index = g_filter_index - 1;
-    if (source_index < 0 || source_index >= static_cast<int>(g_settings.sources.size())) {
+    if (source_index < 0 || source_index >= static_cast<int>(indexes.size())) {
         return calendar::tr(g_ui_language, calendar::TextKey::All);
     }
-    return g_settings.sources[static_cast<size_t>(source_index)].name;
+    return source_display_name(g_settings.sources[indexes[static_cast<size_t>(source_index)]]);
 }
 
 std::vector<calendar::Event> visible_events()
@@ -187,6 +503,64 @@ void reload_events()
     g_events = calendar::load_events(g_settings, g_focus_month, g_ui_language, &g_status);
 }
 
+constexpr int kManagerMaxRows = 10;
+constexpr int kManagerRowLanguage = 0;
+constexpr int kManagerRowLunar = 1;
+constexpr int kManagerRowHolidays = 2;
+constexpr int kManagerRowAlmanac = 3;
+constexpr int kManagerRowWeather = 4;
+constexpr int kManagerRowSync = 5;
+constexpr int kManagerRowAddIcs = 6;
+constexpr int kManagerCustomStart = 7;
+
+void stop_detail_scroll()
+{
+    if (g_detail_scroll_timer) {
+        lv_timer_delete(g_detail_scroll_timer);
+        g_detail_scroll_timer = nullptr;
+    }
+    g_detail_scroll_panel = nullptr;
+    g_detail_scroll_content = nullptr;
+    g_detail_scroll_direction = 1;
+    g_detail_scroll_offset = 0;
+    g_detail_scroll_max = 0;
+    g_detail_scroll_hold = 0;
+}
+
+void detail_scroll_timer_cb(lv_timer_t *)
+{
+    if (!g_detail_scroll_content || g_detail_scroll_max <= 0) return;
+    if (g_detail_scroll_hold > 0) {
+        --g_detail_scroll_hold;
+        return;
+    }
+
+    if (g_detail_scroll_direction > 0) {
+        if (g_detail_scroll_offset >= g_detail_scroll_max) {
+            g_detail_scroll_direction = -1;
+            g_detail_scroll_hold = 8;
+            return;
+        }
+        ++g_detail_scroll_offset;
+    } else {
+        if (g_detail_scroll_offset <= 0) {
+            g_detail_scroll_direction = 1;
+            g_detail_scroll_hold = 8;
+            return;
+        }
+        --g_detail_scroll_offset;
+    }
+    lv_obj_set_y(g_detail_scroll_content, -g_detail_scroll_offset);
+}
+
+void start_detail_scroll_if_needed(int content_bottom, int panel_height)
+{
+    if (!g_detail_scroll_content) return;
+    g_detail_scroll_max = std::max(0, content_bottom - panel_height + 2);
+    if (g_detail_scroll_max <= 0) return;
+    g_detail_scroll_timer = lv_timer_create(detail_scroll_timer_cb, 140, nullptr);
+}
+
 void save_and_reload()
 {
     calendar::save_settings(g_settings);
@@ -194,6 +568,7 @@ void save_and_reload()
 }
 
 void render();
+void redraw_all();
 
 void sync_focus_month()
 {
@@ -211,7 +586,7 @@ void set_selected(calendar::Date date)
 
 void cycle_filter()
 {
-    int count = static_cast<int>(g_settings.sources.size()) + 1;
+    int count = static_cast<int>(enabled_source_indexes().size()) + 1;
     if (count <= 0) count = 1;
     g_filter_index = (g_filter_index + 1) % count;
     render();
@@ -224,7 +599,7 @@ void cycle_language()
     else if (g_settings.language == calendar::Language::Japanese) g_settings.language = calendar::Language::English;
     else g_settings.language = calendar::Language::Auto;
     save_and_reload();
-    render();
+    redraw_all();
 }
 
 void add_ics_url(const std::string &url)
@@ -253,8 +628,30 @@ void add_ics_url(const std::string &url)
         if (!unique) source.id = calendar::sanitize_id(source.name) + "-" + std::to_string(suffix++);
     }
     g_settings.sources.push_back(source);
-    g_filter_index = static_cast<int>(g_settings.sources.size());
+    g_filter_index = filter_index_for_source_id(source.id);
     save_and_reload();
+}
+
+void append_input_text(const char *text)
+{
+    if (!text) return;
+    for (const char *p = text; *p && g_input_url.size() < 240; ++p) {
+        unsigned char ch = static_cast<unsigned char>(*p);
+        if (ch == '\r' || ch == '\n') break;
+        if (ch >= 32) g_input_url.push_back(static_cast<char>(ch));
+    }
+}
+
+void paste_input_text()
+{
+#if LV_USE_SDL
+    char *clip = SDL_GetClipboardText();
+    if (clip) {
+        append_input_text(clip);
+        SDL_free(clip);
+        render();
+    }
+#endif
 }
 
 std::string weekday_name(int index)
@@ -281,6 +678,7 @@ void render_top_bar()
 
 void render_month()
 {
+    stop_detail_scroll();
     lv_obj_clean(g_root);
     lv_obj_set_style_bg_color(g_root, lv_color_hex(0x111820), 0);
     lv_obj_set_style_bg_opa(g_root, LV_OPA_COVER, 0);
@@ -289,14 +687,14 @@ void render_month()
     rect(g_root, kRightX, kRightY, kRightW, kRightH, 0x19242E, 0x2D3C48, 4);
 
     for (int col = 0; col < 7; ++col) {
-        center_label(g_root, weekday_name(col), kLeftX + 4 + col * kCellW, kLeftY + 5,
-                     kCellW - 2, 12, font_text(), col >= 5 ? 0xF2B36C : 0x8EA3B0);
+        center_label(g_root, weekday_name(col), kLeftX + 4 + col * kCellW, kLeftY + 3,
+                     kCellW - 2, 14, font_text(), col >= 5 ? 0xF2B36C : 0x8EA3B0);
     }
 
     std::vector<calendar::Event> events = visible_events();
     std::vector<calendar::DayInfo> days = calendar::build_month_grid(
         g_focus_month, g_selected, events, g_settings.lunar_enabled, g_ui_language);
-    int grid_y = kLeftY + 20;
+    int grid_y = kLeftY + 24;
     for (int i = 0; i < 42; ++i) {
         int row = i / 7;
         int col = i % 7;
@@ -321,80 +719,130 @@ void render_month()
     std::string date = calendar::date_key(g_selected);
     label(g_root, date, kRightX + 7, kRightY + 7, kRightW - 14, 14,
           &lv_font_montserrat_12, 0xE9F0F5);
-    int detail_y = kRightY + 25;
+    int panel_x = kRightX + 7;
+    int panel_y = kRightY + 25;
+    int panel_w = kRightW - 14;
+    int panel_h = kRightH - 32;
+    g_detail_scroll_panel = lv_obj_create(g_root);
+    lv_obj_remove_style_all(g_detail_scroll_panel);
+    lv_obj_set_pos(g_detail_scroll_panel, panel_x, panel_y);
+    lv_obj_set_size(g_detail_scroll_panel, panel_w, panel_h);
+    lv_obj_set_style_bg_opa(g_detail_scroll_panel, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(g_detail_scroll_panel, 0, 0);
+    lv_obj_clear_flag(g_detail_scroll_panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(g_detail_scroll_panel, LV_SCROLLBAR_MODE_OFF);
+    g_detail_scroll_content = lv_obj_create(g_detail_scroll_panel);
+    lv_obj_remove_style_all(g_detail_scroll_content);
+    lv_obj_set_pos(g_detail_scroll_content, 0, 0);
+    lv_obj_set_size(g_detail_scroll_content, panel_w, panel_h);
+    lv_obj_clear_flag(g_detail_scroll_content, LV_OBJ_FLAG_SCROLLABLE);
+
+    int detail_y = 0;
     if (g_settings.lunar_enabled) {
-        label(g_root, calendar::lunar_label(g_selected, g_ui_language),
-              kRightX + 7, detail_y, kRightW - 14, 15, font_text(), 0xF5D06F);
+        label(g_detail_scroll_content, calendar::lunar_label(g_selected, g_ui_language),
+              0, detail_y, panel_w, 15, font_text(), 0xF5D06F);
         detail_y += 17;
     }
     if (selected_events.empty()) {
-        label(g_root, calendar::tr(g_ui_language, calendar::TextKey::NoEvents),
-              kRightX + 7, detail_y, kRightW - 14, 15, font_text(), 0x8597A4);
+        label(g_detail_scroll_content, calendar::tr(g_ui_language, calendar::TextKey::NoEvents),
+              0, detail_y, panel_w, 15, font_text(), 0x8597A4);
         detail_y += 17;
     } else {
-        for (size_t i = 0; i < selected_events.size() && i < 5; ++i) {
+        for (size_t i = 0; i < selected_events.size(); ++i) {
             const calendar::Event &event = selected_events[i];
             std::string line = event.all_day ? "" : event.time_text + " ";
-            line += event.title;
-            label(g_root, clipped(line, 26), kRightX + 7, detail_y, kRightW - 14, 14,
-                  font_text(), i == 0 ? 0xFFFFFF : 0xC8D3DA);
-            detail_y += 15;
-            label(g_root, clipped(event.source_name, 20), kRightX + 10, detail_y,
-                  kRightW - 18, 11, &lv_font_montserrat_10, 0x75B7FF);
+            line += display_text(event.title);
+            int title_h = wrapped_text_height(line, panel_w, 14);
+            label(g_detail_scroll_content, line, 0, detail_y, panel_w, title_h,
+                  font_text(), i == 0 ? 0xFFFFFF : 0xC8D3DA, LV_LABEL_LONG_WRAP);
+            detail_y += title_h + 1;
+            label(g_detail_scroll_content, clipped(event.source_name, 20), 3, detail_y,
+                  panel_w - 4, 13, font_text(), 0x75B7FF);
             detail_y += 13;
-            if (detail_y > kRightY + kRightH - 18) break;
+            if (!event.description.empty()) {
+                std::string description = display_text(event.description);
+                int desc_h = wrapped_text_height(description, panel_w - 4, 14);
+                label(g_detail_scroll_content, description, 3, detail_y, panel_w - 4, desc_h,
+                      font_text(), 0xAAB6BD, LV_LABEL_LONG_WRAP);
+                detail_y += desc_h + 3;
+            }
+            if (i + 1 < selected_events.size()) {
+                rect(g_detail_scroll_content, 0, detail_y, panel_w, 1, 0x2D3C48, 0, 0);
+                detail_y += 5;
+            }
         }
     }
-    label(g_root, clipped(g_status, 28), kRightX + 7, kRightY + kRightH - 14,
-          kRightW - 14, 11, &lv_font_montserrat_10, 0x607583);
+    lv_obj_set_height(g_detail_scroll_content, std::max(detail_y, panel_h));
+    start_detail_scroll_if_needed(detail_y, panel_h);
 }
 
 void render_manager_row(int row, const std::string &left, const std::string &right,
                         uint32_t right_color = 0xCFE6F2)
 {
-    int y = 25 + row * 18;
+    bool cjk_layout = g_ui_language == calendar::Language::Chinese ||
+                      g_ui_language == calendar::Language::Japanese;
+    int row_step = 15;
+    int row_height = 14;
+    int text_height = cjk_layout ? 14 : 13;
+    int y = 21 + row * row_step;
     bool selected = row == g_manager_row;
-    rect(g_root, 8, y, 304, 16, selected ? 0x24496B : 0x16212A,
+    rect(g_root, 8, y, 304, row_height, selected ? 0x24496B : 0x16212A,
          selected ? 0x5AA8F2 : 0x243542, 3);
-    label(g_root, clipped(left, 28), 13, y + 2, 198, 12, font_text(), 0xEEF5F8);
-    label(g_root, clipped(right, 16), 214, y + 2, 92, 12, font_text(), right_color);
+    label(g_root, left, 13, y, 165, text_height, font_text(), 0xEEF5F8);
+    label(g_root, right, 184, y, 122, text_height, font_text(), right_color);
+}
+
+void render_source_toggle_row(int row, const std::string &source_id,
+                              calendar::TextKey label_key)
+{
+    bool enabled = source_enabled(source_id);
+    render_manager_row(row, calendar::tr(g_ui_language, label_key),
+                       enabled ? calendar::tr(g_ui_language, calendar::TextKey::Enabled)
+                               : calendar::tr(g_ui_language, calendar::TextKey::Disabled),
+                       enabled ? 0x7FEB92 : 0x9CA7AE);
 }
 
 void render_manager()
 {
+    stop_detail_scroll();
     lv_obj_clean(g_root);
     lv_obj_set_style_bg_color(g_root, lv_color_hex(0x101820), 0);
     lv_obj_set_style_bg_opa(g_root, LV_OPA_COVER, 0);
     rect(g_root, 0, 0, kScreenWidth, 20, 0x1B2733, 0, 0);
     label(g_root, calendar::tr(g_ui_language, calendar::TextKey::Manage),
           8, 3, 170, 16, font_text_large(), 0xF2F6F8);
-    label(g_root, calendar::config_path(), 152, 5, 160, 12,
-          &lv_font_montserrat_10, 0x718491);
 
-    render_manager_row(0, calendar::tr(g_ui_language, calendar::TextKey::Language),
+    render_manager_row(kManagerRowLanguage,
+                       calendar::tr(g_ui_language, calendar::TextKey::Language),
                        calendar::language_label(g_settings.language, g_ui_language), 0xF5D06F);
-    render_manager_row(1, calendar::tr(g_ui_language, calendar::TextKey::Lunar),
+    render_manager_row(kManagerRowLunar, calendar::tr(g_ui_language, calendar::TextKey::Lunar),
                        g_settings.lunar_enabled ? calendar::tr(g_ui_language, calendar::TextKey::Enabled)
                                                 : calendar::tr(g_ui_language, calendar::TextKey::Disabled),
                        g_settings.lunar_enabled ? 0x7FEB92 : 0x9CA7AE);
-    render_manager_row(2, calendar::tr(g_ui_language, calendar::TextKey::Sync),
-                       clipped(g_status, 16), 0x8BC9FF);
-    render_manager_row(3, calendar::tr(g_ui_language, calendar::TextKey::AddIcs), "", 0x8BC9FF);
+    render_source_toggle_row(kManagerRowHolidays, "china-holidays", calendar::TextKey::ChinaHolidays);
+    render_source_toggle_row(kManagerRowAlmanac, "almanac", calendar::TextKey::Almanac);
+    render_source_toggle_row(kManagerRowWeather, "weather", calendar::TextKey::Weather);
+    render_manager_row(kManagerRowSync, calendar::tr(g_ui_language, calendar::TextKey::Sync),
+                       g_status, 0x8BC9FF);
+    render_manager_row(kManagerRowAddIcs, calendar::tr(g_ui_language, calendar::TextKey::AddIcs),
+                       "", 0x8BC9FF);
 
-    int max_rows = 8;
-    for (size_t i = 0; i < g_settings.sources.size() && static_cast<int>(i) < max_rows; ++i) {
-        const calendar::CalendarSource &source = g_settings.sources[i];
-        std::string left = source.name;
+    std::vector<size_t> custom_indexes = custom_source_indexes();
+    int max_custom_rows = kManagerMaxRows - kManagerCustomStart;
+    for (size_t i = 0; i < custom_indexes.size() && static_cast<int>(i) < max_custom_rows; ++i) {
+        const calendar::CalendarSource &source = g_settings.sources[custom_indexes[i]];
+        std::string left = source_display_name(source);
         if (source.kind == "ics" && !source.url.empty()) left += " ics";
         std::string right = source.enabled ? calendar::tr(g_ui_language, calendar::TextKey::Enabled)
                                            : calendar::tr(g_ui_language, calendar::TextKey::Disabled);
-        render_manager_row(4 + static_cast<int>(i), left, right,
+        render_manager_row(kManagerCustomStart + static_cast<int>(i), left, right,
                            source.enabled ? 0x7FEB92 : 0x9CA7AE);
     }
 }
 
 void render_ics_input()
 {
+    stop_detail_scroll();
     lv_obj_clean(g_root);
     lv_obj_set_style_bg_color(g_root, lv_color_hex(0x101820), 0);
     lv_obj_set_style_bg_opa(g_root, LV_OPA_COVER, 0);
@@ -414,6 +862,15 @@ void render()
     if (g_mode == ScreenMode::Manager) render_manager();
     else if (g_mode == ScreenMode::IcsInput) render_ics_input();
     else render_month();
+}
+
+void redraw_all()
+{
+    render();
+    if (g_root) {
+        lv_obj_invalidate(g_root);
+        lv_refr_now(nullptr);
+    }
 }
 
 void handle_short_back()
@@ -440,6 +897,51 @@ char ascii_char(const key_item *item)
     return static_cast<char>(std::tolower(ch));
 }
 
+int nav_delta_days(const key_item *item)
+{
+    if (!item) return 0;
+    switch (item->key_code) {
+        case KEY_LEFT: return -1;
+        case KEY_RIGHT: return 1;
+        case KEY_UP: return -7;
+        case KEY_DOWN: return 7;
+        default: break;
+    }
+    switch (ascii_char(item)) {
+        case 'z': return -1;
+        case 'c': return 1;
+        case 'f': return -7;
+        case 'x': return 7;
+        default: return 0;
+    }
+}
+
+int nav_delta_rows(const key_item *item)
+{
+    if (!item) return 0;
+    switch (item->key_code) {
+        case KEY_UP: return -1;
+        case KEY_DOWN: return 1;
+        default: break;
+    }
+    switch (ascii_char(item)) {
+        case 'f': return -1;
+        case 'x': return 1;
+        default: return 0;
+    }
+}
+
+int modified_month_delta(const key_item *item)
+{
+    if (!item) return 0;
+    char ch = ascii_char(item);
+    if (ch != '<' && ch != '>') return 0;
+    int direction = ch == '<' ? -1 : 1;
+    if (item->mods & KBD_MOD_ALT) return direction * 12;
+    if (item->mods & KBD_MOD_CTRL) return direction;
+    return 0;
+}
+
 void handle_esc(const key_item *item)
 {
     if (!item || item->key_code != KEY_ESC) return;
@@ -457,10 +959,13 @@ void handle_month_key(const key_item *item)
 {
     if (!is_press(item)) return;
     char ch = ascii_char(item);
-    if (item->key_code == KEY_LEFT) set_selected(calendar::add_days(g_selected, -1));
-    else if (item->key_code == KEY_RIGHT) set_selected(calendar::add_days(g_selected, 1));
-    else if (item->key_code == KEY_UP) set_selected(calendar::add_days(g_selected, -7));
-    else if (item->key_code == KEY_DOWN) set_selected(calendar::add_days(g_selected, 7));
+    int month_delta = modified_month_delta(item);
+    if (month_delta != 0) {
+        set_selected(calendar::add_months(g_selected, month_delta));
+        return;
+    }
+    int day_delta = nav_delta_days(item);
+    if (day_delta != 0) set_selected(calendar::add_days(g_selected, day_delta));
     else if (item->key_code == KEY_PAGEUP || item->key_code == KEY_PREVIOUS) {
         set_selected(calendar::add_months(g_selected, -1));
     } else if (item->key_code == KEY_PAGEDOWN || item->key_code == KEY_NEXT) {
@@ -479,30 +984,47 @@ void handle_month_key(const key_item *item)
 
 int manager_row_count()
 {
-    return 4 + static_cast<int>(std::min<size_t>(g_settings.sources.size(), 8));
+    int custom_count = static_cast<int>(custom_source_indexes().size());
+    return kManagerCustomStart + std::min(custom_count, kManagerMaxRows - kManagerCustomStart);
+}
+
+void toggle_source_id(const std::string &source_id)
+{
+    calendar::CalendarSource *source = source_by_id(source_id);
+    if (!source) return;
+    source->enabled = !source->enabled;
+    bool enabled = source->enabled;
+    save_and_reload();
+    g_filter_index = enabled ? filter_index_for_source_id(source_id) : 0;
+    normalize_filter_index();
+    render();
 }
 
 void handle_manager_activate()
 {
-    if (g_manager_row == 0) cycle_language();
-    else if (g_manager_row == 1) {
+    if (g_manager_row == kManagerRowLanguage) cycle_language();
+    else if (g_manager_row == kManagerRowLunar) {
         g_settings.lunar_enabled = !g_settings.lunar_enabled;
         save_and_reload();
         render();
-    } else if (g_manager_row == 2) {
+    } else if (g_manager_row == kManagerRowHolidays) {
+        toggle_source_id("china-holidays");
+    } else if (g_manager_row == kManagerRowAlmanac) {
+        toggle_source_id("almanac");
+    } else if (g_manager_row == kManagerRowWeather) {
+        toggle_source_id("weather");
+    } else if (g_manager_row == kManagerRowSync) {
         reload_events();
         render();
-    } else if (g_manager_row == 3) {
+    } else if (g_manager_row == kManagerRowAddIcs) {
         g_input_url.clear();
         g_mode = ScreenMode::IcsInput;
         render();
     } else {
-        int source_index = g_manager_row - 4;
-        if (source_index >= 0 && source_index < static_cast<int>(g_settings.sources.size())) {
-            g_settings.sources[static_cast<size_t>(source_index)].enabled =
-                !g_settings.sources[static_cast<size_t>(source_index)].enabled;
-            save_and_reload();
-            render();
+        int custom_index = g_manager_row - kManagerCustomStart;
+        std::vector<size_t> indexes = custom_source_indexes();
+        if (custom_index >= 0 && custom_index < static_cast<int>(indexes.size())) {
+            toggle_source_id(g_settings.sources[indexes[static_cast<size_t>(custom_index)]].id);
         }
     }
 }
@@ -511,11 +1033,9 @@ void handle_manager_key(const key_item *item)
 {
     if (!is_press(item)) return;
     char ch = ascii_char(item);
-    if (item->key_code == KEY_UP) {
-        g_manager_row = std::max(0, g_manager_row - 1);
-        render();
-    } else if (item->key_code == KEY_DOWN) {
-        g_manager_row = std::min(manager_row_count() - 1, g_manager_row + 1);
+    int row_delta = nav_delta_rows(item);
+    if (row_delta != 0) {
+        g_manager_row = std::max(0, std::min(manager_row_count() - 1, g_manager_row + row_delta));
         render();
     } else if (item->key_code == KEY_ENTER || item->key_code == KEY_KPENTER) {
         handle_manager_activate();
@@ -532,6 +1052,11 @@ void handle_manager_key(const key_item *item)
 void handle_input_key(const key_item *item)
 {
     if (!is_press(item)) return;
+    char ch = ascii_char(item);
+    if (item->mods & (KBD_MOD_CTRL | KBD_MOD_LOGO)) {
+        if (ch == 'v') paste_input_text();
+        return;
+    }
     if (item->key_code == KEY_ENTER || item->key_code == KEY_KPENTER) {
         add_ics_url(g_input_url);
         g_mode = ScreenMode::Month;
@@ -544,11 +1069,8 @@ void handle_input_key(const key_item *item)
         return;
     }
     if (item->utf8[0]) {
-        unsigned char ch = static_cast<unsigned char>(item->utf8[0]);
-        if (ch >= 32 && g_input_url.size() < 240) {
-            g_input_url += item->utf8;
-            render();
-        }
+        append_input_text(item->utf8);
+        render();
     }
 }
 
@@ -676,6 +1198,32 @@ void build_ui()
     render();
 }
 
+bool parse_initial_date(const char *text, calendar::Date *date)
+{
+    if (!text || !text[0] || !date) return false;
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    if (std::sscanf(text, "%d-%d-%d", &year, &month, &day) != 3) return false;
+    if (year < 1970 || month < 1 || month > 12 || day < 1) return false;
+    if (day > calendar::days_in_month(year, month)) return false;
+    date->year = year;
+    date->month = month;
+    date->day = day;
+    return true;
+}
+
+void apply_initial_screen(const char *screen)
+{
+    if (!screen || !screen[0]) return;
+    if (std::strcmp(screen, "manager") == 0) {
+        g_mode = ScreenMode::Manager;
+        g_manager_row = 0;
+    } else if (std::strcmp(screen, "input") == 0) {
+        g_mode = ScreenMode::IcsInput;
+    }
+}
+
 }  // namespace
 
 int main()
@@ -686,11 +1234,14 @@ int main()
 
     calendar::load_settings(&g_settings);
     g_selected = calendar::today_local();
+    parse_initial_date(std::getenv("M5_CALENDAR_DATE"), &g_selected);
+    apply_initial_screen(std::getenv("M5_CALENDAR_SCREEN"));
     sync_focus_month();
     g_ui_language = calendar::resolve_language(g_settings.language, std::getenv("LANG"));
     reload_events();
 
     lv_init();
+    init_runtime_fonts();
     lv_linux_disp_init();
     LV_EVENT_KEYBOARD = lv_event_register_id();
     lv_linux_indev_init();

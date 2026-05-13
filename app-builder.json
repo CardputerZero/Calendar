@@ -1,14 +1,32 @@
 {
   "name": "Calendar",
   "package": "calendar",
-  "version": "0.1.0",
+  "package_name": "calendar",
+  "version": "0.1.3",
+  "app_name": "Calendar",
+  "bin_name": "M5CardputerZero-Calendar",
   "description": "Cardputer Zero calendar with ICS subscriptions, lunar details, and multilingual UI.",
-  "maintainer": "Cardputer Zero <dev@example.com>",
+  "maintainer": "Zhu Zhe <zhuzhe1983@gmail.com>",
   "homepage": "https://github.com/CardputerZero/Calendar",
+  "runtime": "legacy-deb-only",
+  "lvgl_version": "9.5",
+  "caps": ["keyboard", "network", "filesystem"],
   "store": {
-    "summary": "Compact Calendar app for local and online ICS schedules.",
+    "summary": "Compact calendar with ICS sync, lunar dates, holidays, almanac, and weather.",
     "categories": ["Productivity", "Calendar"],
+    "license": "MIT",
+    "source_repo": "https://github.com/CardputerZero/Calendar",
     "icon": "share/images/calendar.png",
-    "screenshots": []
+    "screenshots": [
+      "store/screenshots/calendar-holiday-zh-320x170.png",
+      "store/screenshots/calendar-weather-zh-320x170.png",
+      "store/screenshots/calendar-almanac-zh-320x170.png",
+      "store/screenshots/calendar-manager-zh-320x170.png"
+    ],
+    "permissions": {
+      "keyboard_input": true,
+      "network": true,
+      "filesystem": true
+    }
   }
 }

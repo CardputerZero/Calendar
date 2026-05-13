@@ -2,6 +2,8 @@
 .butler/
 build/
 dist/
+artifacts/
+tmp/
 static_lib/
 *.o
 *.d

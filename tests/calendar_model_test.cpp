@@ -38,9 +38,24 @@ void test_settings_roundtrip()
     Settings parsed = calendar::parse_settings(calendar::serialize_settings(settings));
     assert(parsed.language == Language::Japanese);
     assert(!parsed.lunar_enabled);
-    assert(parsed.sources.size() == 2);
-    assert(parsed.sources[1].id == "work");
-    assert(parsed.sources[1].url == "https://example.com/work.ics");
+    assert(parsed.sources.size() == 5);
+    assert(parsed.sources[1].id == "china-holidays");
+    assert(!parsed.sources[1].enabled);
+    assert(parsed.sources[1].url.find("rilipro.com/HoliBack") != std::string::npos);
+    assert(parsed.sources[2].id == "almanac");
+    assert(parsed.sources[3].id == "weather");
+    assert(parsed.sources[4].id == "work");
+    assert(parsed.sources[4].url == "https://example.com/work.ics");
+
+    Settings migrated = calendar::parse_settings(
+        "language=en\n"
+        "lunar=1\n"
+        "calendar=default|Default|1|default|\n");
+    assert(migrated.sources.size() == 4);
+    assert(migrated.sources[1].id == "china-holidays");
+    assert(!migrated.sources[1].enabled);
+    assert(migrated.sources[2].id == "almanac");
+    assert(migrated.sources[3].id == "weather");
 }
 
 void test_ics_parser()

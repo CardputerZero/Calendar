@@ -35,6 +35,9 @@ enum class TextKey {
     English,
     Chinese,
     Japanese,
+    ChinaHolidays,
+    Almanac,
+    Weather,
 };
 
 struct Date {

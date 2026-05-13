@@ -677,6 +677,7 @@ lv_indev_t * lv_sdl_keyboard_create(void)
     lv_indev_set_driver_data(indev, dsc);
     lv_indev_set_mode(indev, LV_INDEV_MODE_EVENT);
     lv_indev_add_event_cb(indev, release_indev_cb, LV_EVENT_DELETE, indev);
+    SDL_StartTextInput();
     return indev;
 }
 
@@ -852,12 +853,34 @@ void lv_sdl_keyboard_handler(SDL_Event * event)
 
             /* 控制键 -> LV_KEY_* */
             const uint32_t ctrl_key = keycode_to_ctrl_key(sym);
-            if(ctrl_key == '\0') return;    /* 普通字符交给 SDL_TEXTINPUT 处理 */
-
-            const size_t blen = lv_strlen(dsc->buf);
-            if(blen < KEYBOARD_BUFFER_SIZE - 1) {
-                dsc->buf[blen] = ctrl_key;
-                dsc->buf[blen + 1] = '\0';
+            if(ctrl_key == '\0') {
+                if((md & (KMOD_CTRL | KMOD_GUI)) && sym == SDLK_v) {
+                    const size_t blen = lv_strlen(dsc->buf);
+                    if(blen < KEYBOARD_BUFFER_SIZE - 1) {
+                        dsc->buf[blen] = 'v';
+                        dsc->buf[blen + 1] = '\0';
+                    }
+                }
+                else if((md & (KMOD_CTRL | KMOD_ALT)) &&
+                        (sym == SDLK_COMMA || sym == SDLK_LESS ||
+                         sym == SDLK_PERIOD || sym == SDLK_GREATER)) {
+                    const size_t blen = lv_strlen(dsc->buf);
+                    if(blen < KEYBOARD_BUFFER_SIZE - 1) {
+                        dsc->buf[blen] =
+                            (sym == SDLK_COMMA || sym == SDLK_LESS) ? '<' : '>';
+                        dsc->buf[blen + 1] = '\0';
+                    }
+                }
+                else {
+                    return;    /* 普通字符交给 SDL_TEXTINPUT 处理 */
+                }
+            }
+            else {
+                const size_t blen = lv_strlen(dsc->buf);
+                if(blen < KEYBOARD_BUFFER_SIZE - 1) {
+                    dsc->buf[blen] = ctrl_key;
+                    dsc->buf[blen + 1] = '\0';
+                }
             }
             break;
         }

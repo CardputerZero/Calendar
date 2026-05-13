@@ -23,7 +23,7 @@ LDFLAGS = []
 if "CONFIG_V9_5_LV_USE_SDL" not in os.environ:
     LDFLAGS += ["-lutil"]
 LINK_SEARCH_PATH = []
-STATIC_FILES = []
+STATIC_FILES = [os.path.join("fonts", "NotoSansSC-Regular.ttf")]
 MULTIARCH_INCLUDE = None
 
 sysroot_candidates = []
