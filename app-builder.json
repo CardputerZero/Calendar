@@ -1,0 +1,14 @@
+{
+  "name": "Calendar",
+  "package": "calendar",
+  "version": "0.1.0",
+  "description": "Cardputer Zero calendar with ICS subscriptions, lunar details, and multilingual UI.",
+  "maintainer": "Cardputer Zero <dev@example.com>",
+  "homepage": "https://github.com/CardputerZero/Calendar",
+  "store": {
+    "summary": "Compact Calendar app for local and online ICS schedules.",
+    "categories": ["Productivity", "Calendar"],
+    "icon": "share/images/calendar.png",
+    "screenshots": []
+  }
+}

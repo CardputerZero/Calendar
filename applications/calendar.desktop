@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Calendar
+Exec=/usr/share/APPLaunch/bin/M5CardputerZero-Calendar
+Terminal=false
+Icon=share/images/calendar.png
+Type=Application

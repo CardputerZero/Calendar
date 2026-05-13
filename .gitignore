@@ -1,0 +1,9 @@
+.DS_Store
+.butler/
+build/
+dist/
+static_lib/
+*.o
+*.d
+tests/build/
+tests/artifacts/
