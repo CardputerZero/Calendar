@@ -12,15 +12,15 @@
   "lvgl_version": "9.5",
   "caps": ["keyboard", "network", "filesystem"],
   "store": {
-    "summary": "Compact calendar with ICS sync, lunar dates, holidays, almanac, and weather.",
+    "summary": "Compact calendar with ICS sync, lunar dates, regional holidays, and almanac.",
     "categories": ["Productivity", "Calendar"],
     "license": "MIT",
     "source_repo": "https://github.com/CardputerZero/Calendar",
     "icon": "share/images/calendar.png",
     "screenshots": [
-      "store/screenshots/calendar-holiday-zh-320x170.png",
-      "store/screenshots/calendar-weather-zh-320x170.png",
-      "store/screenshots/calendar-almanac-zh-320x170.png",
+      "store/screenshots/calendar-month-zh-320x170.png",
+      "store/screenshots/calendar-subscriptions-zh-320x170.png",
+      "store/screenshots/calendar-source-edit-zh-320x170.png",
       "store/screenshots/calendar-manager-zh-320x170.png"
     ],
     "permissions": {

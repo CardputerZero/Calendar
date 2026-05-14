@@ -1,6 +1,7 @@
 #ifndef CALENDAR_MODEL_H
 #define CALENDAR_MODEL_H
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,7 @@ enum class TextKey {
     Sync,
     AddIcs,
     IcsUrl,
+    Enable,
     Enabled,
     Disabled,
     Today,
@@ -36,8 +38,21 @@ enum class TextKey {
     Chinese,
     Japanese,
     ChinaHolidays,
+    JapanHolidays,
+    UsHolidays,
+    UkHolidays,
+    GermanyHolidays,
+    FranceHolidays,
     Almanac,
     Weather,
+    Subscriptions,
+    Edit,
+    Delete,
+    Border,
+    BorderColor,
+    Background,
+    BackgroundColor,
+    Loading,
 };
 
 struct Date {
@@ -51,13 +66,19 @@ struct CalendarSource {
     std::string name;
     std::string url;
     std::string kind;
+    Language language;
     bool enabled;
+    bool border_enabled;
+    bool background_enabled;
+    uint32_t border_color;
+    uint32_t background_color;
 };
 
 struct Settings {
     Language language;
     bool lunar_enabled;
     std::vector<CalendarSource> sources;
+    std::vector<std::string> removed_builtin_ids;
 };
 
 struct Event {
@@ -80,6 +101,14 @@ struct DayInfo {
     int event_count;
     std::string lunar;
 };
+
+struct LoadProgress {
+    int current;
+    int total;
+    std::string source_name;
+};
+
+typedef void (*LoadProgressCallback)(const LoadProgress &progress, void *user_data);
 
 bool operator==(const Date &a, const Date &b);
 bool operator!=(const Date &a, const Date &b);
@@ -113,6 +142,10 @@ std::vector<Event> default_events(const Settings &settings, Date window_start, D
 std::vector<Event> parse_ics_events(const std::string &ics, const CalendarSource &source,
                                     Date window_start, Date window_end);
 std::string fetch_url_to_string(const std::string &url, bool *ok);
+std::vector<Event> load_events_with_progress(const Settings &settings, Date focus_month,
+                                             Language language, std::string *status,
+                                             LoadProgressCallback callback,
+                                             void *user_data);
 std::vector<Event> load_events(const Settings &settings, Date focus_month, Language language,
                                std::string *status);
 

@@ -32,30 +32,78 @@ void test_settings_roundtrip()
     source.name = "Work";
     source.url = "https://example.com/work.ics";
     source.kind = "ics";
+    source.language = Language::English;
     source.enabled = true;
+    source.border_enabled = true;
+    source.background_enabled = true;
+    source.border_color = 0x75B7FF;
+    source.background_color = 0x203449;
     settings.sources.push_back(source);
 
     Settings parsed = calendar::parse_settings(calendar::serialize_settings(settings));
     assert(parsed.language == Language::Japanese);
     assert(!parsed.lunar_enabled);
-    assert(parsed.sources.size() == 5);
-    assert(parsed.sources[1].id == "china-holidays");
+    assert(parsed.sources.size() == 10);
+    assert(parsed.sources[0].id == "default");
+    assert(!parsed.sources[0].enabled);
+    assert(parsed.sources[1].id == "lunar");
     assert(!parsed.sources[1].enabled);
-    assert(parsed.sources[1].url.find("rilipro.com/HoliBack") != std::string::npos);
-    assert(parsed.sources[2].id == "almanac");
-    assert(parsed.sources[3].id == "weather");
-    assert(parsed.sources[4].id == "work");
-    assert(parsed.sources[4].url == "https://example.com/work.ics");
+    assert(parsed.sources[2].id == "china-holidays");
+    assert(!parsed.sources[2].enabled);
+    assert(parsed.sources[2].url.find("rilipro.com/HoliBack") != std::string::npos);
+    assert(parsed.sources[3].id == "japan-holidays");
+    assert(parsed.sources[4].id == "us-holidays");
+    assert(parsed.sources[5].id == "uk-holidays");
+    assert(parsed.sources[6].id == "germany-holidays");
+    assert(parsed.sources[7].id == "france-holidays");
+    assert(parsed.sources[8].id == "almanac");
+    assert(parsed.sources[9].id == "work");
+    assert(parsed.sources[9].url == "https://example.com/work.ics");
+    assert(parsed.sources[9].language == Language::English);
+    assert(parsed.sources[9].border_enabled);
+    assert(parsed.sources[9].background_enabled);
+    assert(parsed.sources[9].border_color == 0x75B7FF);
 
     Settings migrated = calendar::parse_settings(
         "language=en\n"
         "lunar=1\n"
         "calendar=default|Default|1|default|\n");
-    assert(migrated.sources.size() == 4);
-    assert(migrated.sources[1].id == "china-holidays");
-    assert(!migrated.sources[1].enabled);
-    assert(migrated.sources[2].id == "almanac");
-    assert(migrated.sources[3].id == "weather");
+    assert(migrated.sources.size() == 9);
+    assert(migrated.sources[0].id == "default");
+    assert(migrated.sources[0].enabled);
+    assert(migrated.sources[1].id == "lunar");
+    assert(migrated.sources[1].enabled);
+    assert(migrated.lunar_enabled);
+    assert(migrated.sources[2].id == "china-holidays");
+    assert(!migrated.sources[2].enabled);
+    assert(migrated.sources[3].id == "japan-holidays");
+    assert(migrated.sources[8].id == "almanac");
+
+    Settings legacy_weather_removed = calendar::parse_settings(
+        "language=en\n"
+        "calendar=weather|Weather|1|ics|https://rilipro.com/weather/calendar.php?location=Guangdong_Shenzhen_Shenzhen&days=15&title=both|auto|1|75B7FF|1|203449\n");
+    assert(legacy_weather_removed.sources.size() == 9);
+    for (size_t i = 0; i < legacy_weather_removed.sources.size(); ++i) {
+        assert(legacy_weather_removed.sources[i].id != "weather");
+    }
+
+    Settings deleted_builtin = calendar::parse_settings(
+        "language=en\n"
+        "removed_builtin=china-holidays\n"
+        "removed_builtin=japan-holidays\n");
+    assert(deleted_builtin.sources.size() == 7);
+    bool saw_removed_china = false;
+    bool saw_removed_japan = false;
+    for (size_t i = 0; i < deleted_builtin.sources.size(); ++i) {
+        assert(deleted_builtin.sources[i].id != "china-holidays");
+        assert(deleted_builtin.sources[i].id != "japan-holidays");
+    }
+    for (size_t i = 0; i < deleted_builtin.removed_builtin_ids.size(); ++i) {
+        if (deleted_builtin.removed_builtin_ids[i] == "china-holidays") saw_removed_china = true;
+        if (deleted_builtin.removed_builtin_ids[i] == "japan-holidays") saw_removed_japan = true;
+    }
+    assert(saw_removed_china);
+    assert(saw_removed_japan);
 }
 
 void test_ics_parser()
@@ -64,7 +112,12 @@ void test_ics_parser()
     source.id = "team";
     source.name = "Team";
     source.kind = "ics";
+    source.language = Language::Auto;
     source.enabled = true;
+    source.border_enabled = false;
+    source.background_enabled = false;
+    source.border_color = 0x65D47E;
+    source.background_color = 0x243542;
     source.url = "https://example.com/team.ics";
 
     const std::string ics =

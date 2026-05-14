@@ -5,9 +5,11 @@ Calendar is a 320 x 170 LVGL APPLaunch application for Cardputer Zero.
 ## Features
 
 - Split layout with the month grid on the left and selected-day details on the right.
-- Default local data plus multiple online ICS calendar subscriptions.
-- Built-in optional feeds for China holidays, almanac, and Shenzhen weather.
-- Calendar manager for enabling or disabling sources, lunar display, sync, and language override.
+- Multiple online ICS calendar subscriptions.
+- Built-in optional subscriptions for local date data, lunar display, China, Japan, US, UK, Germany, and France holidays, plus almanac. Built-in subscriptions are disabled by default.
+- Separate subscription manager for adding, deleting, enabling, language-ordering, and styling subscriptions.
+- Subscription styles can mark matching dates with split border colors and horizontally split background colors when multiple subscriptions match the same date.
+- Loading screen appears while online subscriptions are fetched after adding, enabling, or syncing a source.
 - UI strings in English, Simplified Chinese, and Japanese.
 - Language defaults to the system locale and can be overridden in the manager.
 - Long detail text wraps and auto-scrolls on the 320 x 170 display.
@@ -18,7 +20,9 @@ Calendar is a 320 x 170 LVGL APPLaunch application for Cardputer Zero.
 - Page Up and Page Down move by month.
 - Ctrl + < and Ctrl + > move by month; Alt + < and Alt + > move by year.
 - Tab cycles source filters.
-- Enter opens or activates the manager.
+- Enter opens or activates the manager. In the manager, open Subscriptions to manage calendar sources.
+- In Subscriptions: Enter opens the selected source editor, A adds an ICS URL, and D deletes ICS sources, including optional built-in holiday/almanac feeds.
+- In the source editor: Enter changes the highlighted field. Use the Border color and Background color rows to cycle colors; enabling a color row also turns that visual style on.
 - Esc returns from manager/input screens; long Esc exits.
 
 ## Configuration

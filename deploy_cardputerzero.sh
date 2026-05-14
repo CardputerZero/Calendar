@@ -41,7 +41,13 @@ fi
 
 cd "$(dirname "$0")"
 
+rm -rf build/config build/M5CardputerZero-Calendar dist/M5CardputerZero-Calendar
 CONFIG_REPO_AUTOMATION=1 CardputerZero=y scons -j"${JOBS}"
+if ! file dist/M5CardputerZero-Calendar | grep -q 'ELF 64-bit.*ARM aarch64'; then
+  echo "device build failed: dist/M5CardputerZero-Calendar is not Linux AArch64" >&2
+  file dist/M5CardputerZero-Calendar >&2
+  exit 1
+fi
 
 "${SSH_CMD[@]}" "${TARGET}" "rm -rf '${REMOTE_DIR}' && mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/applications' '${REMOTE_DIR}/share/images' '${REMOTE_DIR}/share/font'"
 rsync -az -e "${RSYNC_RSH}" dist/M5CardputerZero-Calendar "${TARGET}:${REMOTE_DIR}/bin/"
