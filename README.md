@@ -1,6 +1,6 @@
-# Cardputer Zero Calendar
+# CardputerZero Calendar
 
-Calendar is a 320 x 170 LVGL APPLaunch application for Cardputer Zero.
+Calendar is a 320 x 170 LVGL APPLaunch application for CardputerZero.
 
 ## Features
 
@@ -49,16 +49,16 @@ Local SDL build:
 scons -j1
 ```
 
-Cardputer Zero cross build:
+CardputerZero cross build:
 
 ```bash
 CardputerZero=y scons -j1
 ```
 
-Deploy to a reachable Cardputer Zero:
+Deploy to a reachable CardputerZero:
 
 ```bash
 ./deploy_cardputerzero.sh <device-ip> [ssh-user]
 ```
 
-APPLaunch package staging can be generated with the Cardputer Zero application skill helper after the binary exists.
+APPLaunch package staging can be generated with the CardputerZero application skill helper after the binary exists.

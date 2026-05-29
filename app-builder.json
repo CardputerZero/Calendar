@@ -5,7 +5,7 @@
   "version": "0.1.3",
   "app_name": "Calendar",
   "bin_name": "M5CardputerZero-Calendar",
-  "description": "Cardputer Zero calendar with ICS subscriptions, lunar details, and multilingual UI.",
+  "description": "CardputerZero calendar with ICS subscriptions, lunar details, and multilingual UI.",
   "maintainer": "Zhu Zhe <zhuzhe1983@gmail.com>",
   "homepage": "https://github.com/CardputerZero/Calendar",
   "runtime": "legacy-deb-only",
