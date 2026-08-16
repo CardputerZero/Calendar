@@ -49,23 +49,17 @@ if ! file dist/M5CardputerZero-Calendar | grep -q 'ELF 64-bit.*ARM aarch64'; the
   exit 1
 fi
 
-"${SSH_CMD[@]}" "${TARGET}" "rm -rf '${REMOTE_DIR}' && mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/applications' '${REMOTE_DIR}/share/images' '${REMOTE_DIR}/share/font'"
+"${SSH_CMD[@]}" "${TARGET}" "rm -rf '${REMOTE_DIR}' && mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/applications' '${REMOTE_DIR}/share/images'"
 rsync -az -e "${RSYNC_RSH}" dist/M5CardputerZero-Calendar "${TARGET}:${REMOTE_DIR}/bin/"
 rsync -az -e "${RSYNC_RSH}" applications/calendar.desktop "${TARGET}:${REMOTE_DIR}/applications/"
 rsync -az -e "${RSYNC_RSH}" share/images/calendar.png "${TARGET}:${REMOTE_DIR}/share/images/"
-if [ -f fonts/NotoSansSC-Regular.ttf ]; then
-  rsync -az -e "${RSYNC_RSH}" fonts/NotoSansSC-Regular.ttf "${TARGET}:${REMOTE_DIR}/share/font/"
-fi
 
 "${SSH_CMD[@]}" "${TARGET}" "set -e
 ${REMOTE_SUDO_FUNC}
-run_sudo mkdir -p /usr/share/APPLaunch/bin /usr/share/APPLaunch/applications /usr/share/APPLaunch/share/images /usr/share/APPLaunch/share/font
+run_sudo mkdir -p /usr/share/APPLaunch/bin /usr/share/APPLaunch/applications /usr/share/APPLaunch/share/images
 run_sudo install -m 0755 '${REMOTE_DIR}/bin/M5CardputerZero-Calendar' /usr/share/APPLaunch/bin/M5CardputerZero-Calendar
 run_sudo install -m 0644 '${REMOTE_DIR}/applications/calendar.desktop' /usr/share/APPLaunch/applications/calendar.desktop
 run_sudo install -m 0644 '${REMOTE_DIR}/share/images/calendar.png' /usr/share/APPLaunch/share/images/calendar.png
-if [ -f '${REMOTE_DIR}/share/font/NotoSansSC-Regular.ttf' ]; then
-  run_sudo install -m 0644 '${REMOTE_DIR}/share/font/NotoSansSC-Regular.ttf' /usr/share/APPLaunch/share/font/NotoSansSC-Regular.ttf
-fi
-run_sudo systemctl restart APPLaunch.service"
+systemctl --user restart APPLaunch.service"
 
 echo "deployed Calendar to ${TARGET}"

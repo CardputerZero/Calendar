@@ -9,6 +9,7 @@ g++ -std=c++17 -Wall -Wextra -Werror \
   -I"$ROOT/main/include" \
   "$ROOT/tests/calendar_model_test.cpp" \
   "$ROOT/main/src/calendar_model.cpp" \
+  "$ROOT/main/src/font_policy.cpp" \
   -o "$BUILD/calendar_model_test"
 
 "$BUILD/calendar_model_test"

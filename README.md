@@ -41,6 +41,29 @@ ICS downloads are cached under:
 
 The app accepts `webcal://`, `https://`, and `http://` ICS URLs. Apple and Google calendar subscription URLs work when they expose an ICS feed.
 
+### Fonts
+
+Calendar follows the CardputerZero system font contract:
+
+- DejaVu Sans Regular at 13 px for normal UI text and 15 px for headings.
+- JetBrains Mono Regular at 13 px for ICS URLs and other technical text.
+- Noto Sans CJK SC for Simplified Chinese and Noto Sans CJK JP for Japanese.
+
+Calendar loads explicit regional OTF/TTF files. It does not use a generic Noto
+CJK TTC or substitute the Simplified Chinese face for Japanese. Missing fonts
+are reported on stderr with the corresponding override variable:
+
+```text
+M5_CALENDAR_FONT_LATIN
+M5_CALENDAR_FONT_MONO
+M5_CALENDAR_FONT_ZH
+M5_CALENDAR_FONT_JA
+```
+
+`M5_CALENDAR_FONT` remains available as a deprecated explicit CJK override.
+Point an override at the exact regional font file required by the selected
+language.
+
 ## Build
 
 Local SDL build:

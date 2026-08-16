@@ -59,11 +59,6 @@ CalendarSource make_source(const char *id, const char *name, const char *kind,
     return source;
 }
 
-CalendarSource default_source()
-{
-    return make_source(kDefaultSourceId, "Date", "default", "", Language::Auto, 0xF5D06F, 0x2A2E21);
-}
-
 CalendarSource lunar_source()
 {
     return make_source(kLunarSourceId, "Lunar", "lunar", "", Language::Chinese, 0xD5B8FF, 0x2B2438);
@@ -237,7 +232,7 @@ void push_unique_string(std::vector<std::string> *values, const std::string &val
 
 bool is_builtin_source_id(const std::string &id)
 {
-    return id == kDefaultSourceId || id == kLunarSourceId || id == kChinaHolidaySourceId ||
+    return id == kLunarSourceId || id == kChinaHolidaySourceId ||
            id == kJapanHolidaySourceId || id == kUsHolidaySourceId ||
            id == kUkHolidaySourceId || id == kGermanyHolidaySourceId ||
            id == kFranceHolidaySourceId || id == kAlmanacSourceId;
@@ -555,7 +550,6 @@ void ensure_builtin_source(Settings *settings, const CalendarSource &source, siz
 
 void ensure_builtin_sources(Settings *settings)
 {
-    ensure_builtin_source(settings, default_source(), 0);
     ensure_builtin_source(settings, lunar_source(), 1);
     ensure_builtin_source(settings, china_holiday_source(), 2);
     ensure_builtin_source(settings, japan_holiday_source(), 3);
@@ -698,7 +692,7 @@ const char *tr(Language language, TextKey key)
         switch (key) {
             case TextKey::AppTitle: return "日历";
             case TextKey::All: return "全部";
-            case TextKey::Default: return "日期";
+            case TextKey::Default: return "今天";
             case TextKey::Manage: return "管理";
             case TextKey::Language: return "语言";
             case TextKey::Lunar: return "农历";
@@ -740,7 +734,7 @@ const char *tr(Language language, TextKey key)
         switch (key) {
             case TextKey::AppTitle: return "カレンダー";
             case TextKey::All: return "すべて";
-            case TextKey::Default: return "日付";
+            case TextKey::Default: return "今日";
             case TextKey::Manage: return "管理";
             case TextKey::Language: return "言語";
             case TextKey::Lunar: return "旧暦";
@@ -826,7 +820,6 @@ Settings default_settings()
     Settings settings;
     settings.language = Language::Auto;
     settings.lunar_enabled = false;
-    settings.sources.push_back(default_source());
     settings.sources.push_back(lunar_source());
     settings.sources.push_back(china_holiday_source());
     settings.sources.push_back(japan_holiday_source());
@@ -906,6 +899,7 @@ Settings parse_settings(const std::string &text)
             if (source.kind.empty()) source.kind = source.url.empty() ? "default" : "ics";
             if (source.id == kLunarSourceId) saw_lunar_source = true;
             if (is_legacy_builtin_weather_source(source)) continue;
+            if (source.id == kDefaultSourceId) continue;
             settings.sources.push_back(source);
             if (is_builtin_source_id(source.id)) erase_value(&settings.removed_builtin_ids, source.id);
         }
@@ -949,32 +943,11 @@ bool save_settings(const Settings &settings)
 std::vector<Event> default_events(const Settings &settings, Date window_start, Date window_end,
                                   Language language)
 {
-    std::vector<Event> events;
-    bool enabled = false;
-    std::string source_name = tr(language, TextKey::Default);
-    for (size_t i = 0; i < settings.sources.size(); ++i) {
-        if (settings.sources[i].id == kDefaultSourceId) {
-            enabled = settings.sources[i].enabled;
-            if (!settings.sources[i].name.empty() &&
-                settings.sources[i].name != "Default" &&
-                settings.sources[i].name != "Date") {
-                source_name = settings.sources[i].name;
-            }
-        }
-    }
-    if (!enabled) return events;
-    Date today = today_local();
-    if (intersects(today, today, window_start, window_end)) {
-        Event event;
-        event.source_id = kDefaultSourceId;
-        event.source_name = source_name;
-        event.title = tr(language, TextKey::Today);
-        event.start = today;
-        event.end = today;
-        event.all_day = true;
-        events.push_back(event);
-    }
-    return events;
+    (void)settings;
+    (void)window_start;
+    (void)window_end;
+    (void)language;
+    return {};
 }
 
 std::vector<Event> parse_ics_events(const std::string &ics, const CalendarSource &source,
@@ -1129,6 +1102,7 @@ std::vector<Event> load_events_with_progress(const Settings &settings, Date focu
         if (ok) {
             write_file(cache_path, ics);
             ++online_count;
+            ++cached_count;
         } else {
             ics = read_file(cache_path);
             if (!ics.empty()) ++cached_count;
